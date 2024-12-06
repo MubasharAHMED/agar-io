@@ -15,12 +15,12 @@ const Agar = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const meRef = useRef<Player | null>(null);
   const refs = useRef(new Map());
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [camera, setCamera] = useState({ x: 0, y: 0 });
 
   const setRef = (id: string, el: HTMLDivElement | null) => {
     refs.current.set(id, el);
   };
-
-  console.log(players);
 
   const draw = useCallback(() => {
     players.forEach((p) => {
@@ -34,11 +34,9 @@ const Agar = () => {
 
   useEffect(() => {
     socket.on("new-player", (data) => {
-      console.log("playerlist", data);
       setPlayers((prev) => {
         return data.players.reduce((acc: Player[], next: Player) => {
           const exist = prev.find(({ id }) => id === next.id);
-          console.log(exist, "???", socket.id);
           if (exist) {
             return [...acc, exist];
           }
@@ -54,8 +52,9 @@ const Agar = () => {
   useEffect(() => {
     socket.emit("register");
     socket.on("register-ok", (data) => {
-      console.log("register-ok");
-      meRef.current = { x: 0, y: 0, ...data };
+      const width = window.innerWidth / 2;
+      const height = window.innerHeight / 2;
+      meRef.current = { id: data.id, x: width, y: height, color: data.color };
       if (meRef.current) {
         setPlayers([meRef.current]);
       }
@@ -67,7 +66,6 @@ const Agar = () => {
 
   useEffect(() => {
     socket.on("ennemy-move", (data) => {
-      console.log("ennemy move", data);
       setPlayers((prev) => {
         return prev.map((p) => {
           if (p.id === data.id) {
@@ -86,45 +84,106 @@ const Agar = () => {
     draw();
   }, [draw, players]);
 
+  const drawGrid = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const gridSize = 50;
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    for (let i = 0; i < height; i += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(width, i);
+      ctx.strokeStyle = "#ddd";
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < width; i += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, height);
+      ctx.strokeStyle = "#ddd";
+      ctx.stroke();
+    }
+  };
+
   useEffect(() => {
-    const clickHandler = (e: MouseEvent) => {
+    drawGrid();
+
+    const interval = setInterval(() => {
+      drawGrid();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const updateCameraPosition = () => {
+    if (meRef.current) {
+      setCamera({
+        x: meRef.current.x - window.innerWidth / 2,
+        y: meRef.current.y - window.innerHeight / 2,
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handlePlayerMove = (e: MouseEvent) => {
       if (meRef.current) {
-        //@ts-ignore
-        setPlayers((prev) => {
-          return prev.map((p) => {
+        setPlayers((prev) =>
+          prev.map((p) => {
             if (p.id === socket.id) {
-              console.log("x", e.clientX);
               const newMe = { ...p, y: e.clientY, x: e.clientX };
               meRef.current = newMe;
               socket.emit("move", newMe);
               return newMe;
             }
             return p;
-          }, []);
-        });
+          })
+        );
+        updateCameraPosition();
       }
     };
 
-    document.body.addEventListener("click", clickHandler);
+    document.body.addEventListener("click", handlePlayerMove);
     return () => {
-      document.body.removeEventListener("click", clickHandler);
+      document.body.removeEventListener("click", handlePlayerMove);
     };
   }, []);
 
   return (
-    <div>
-      {players.map((p) => {
-        return (
-          <div
-            className={clsx(
-              `transition-all duration-1000 absolute w-[30px] h-[30px] rounded-[15px]`
-            )}
-            style={{ backgroundColor: p.color ?? "" }}
-            ref={(el) => setRef(p.id, el)}
-            key={p.id}
-          ></div>
-        );
-      })}
+    <div className="relative w-full h-screen overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="absolute top-0 left-0 z-0"
+        width={window.innerWidth}
+        height={window.innerHeight}
+      ></canvas>
+
+      <div className="relative z-10">
+        {players.map((p) => {
+          return (
+            <div
+              className={clsx(
+                `transition-all duration-1000 absolute w-[30px] h-[30px] rounded-[15px]`
+              )}
+              style={{
+                backgroundColor: p.color ?? "",
+                top: `${p.y - camera.y - 15}px`,
+                left: `${p.x - camera.x - 15}px`,
+              }}
+              ref={(el) => setRef(p.id, el)}
+              key={p.id}
+            ></div>
+          );
+        })}
+      </div>
     </div>
   );
 };

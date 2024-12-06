@@ -28,6 +28,8 @@ const colorGenerator = function* colorGenerator() {
 const colors = colorGenerator();
 
 const players = new Set();
+const foods = new Set();
+let foodInterval;
 
 io.on("connection", (socket) => {
   console.log("Un utilisateur est connecté :", socket.id);
@@ -48,6 +50,23 @@ io.on("connection", (socket) => {
     console.log("emit new player list to all");
     socket.broadcast.emit("new-player", { players: [...players] });
     socket.emit("new-player", { players: [...players] });
+  });
+
+  socket.on("screen-size", (screenSize) => {
+    if (!foodInterval) {
+      foodInterval = setInterval(() => {
+        const food = {
+          id: `food-${Date.now()}`,
+          x: Math.floor(Math.random() * screenSize),
+          y: Math.floor(Math.random() * screenSize),
+          color: colors.next().value,
+        };
+
+        foods.add(food);
+
+        io.sockets.emit("update-food", { foods: [...foods] });
+      }, 1000);
+    }
   });
 
   socket.on("move", (data) => {

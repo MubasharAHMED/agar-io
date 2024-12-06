@@ -9,28 +9,51 @@ type Player = {
   x: number;
   y: number;
   color: string | void;
+  radius?: number;
+};
+
+type Food = {
+  id: string;
+  x: number;
+  y: number;
+  color: string | void;
 };
 
 const Agar = () => {
   const [players, setPlayers] = useState<Player[]>([]);
+  const [foods, setFoods] = useState<Food[]>([]);
   const meRef = useRef<Player | null>(null);
-  const refs = useRef(new Map());
+  const refsPlayers = useRef(new Map());
+  const refsFoods = useRef(new Map());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [camera, setCamera] = useState({ x: 0, y: 0 });
 
-  const setRef = (id: string, el: HTMLDivElement | null) => {
-    refs.current.set(id, el);
+  const setRefPlayer = (id: string, el: HTMLDivElement | null) => {
+    refsPlayers.current.set(id, el);
   };
 
-  const draw = useCallback(() => {
+  const setRefFoods = (id: string, el: HTMLDivElement | null) => {
+    refsFoods.current.set(id, el);
+  };
+
+  const drawPlayers = useCallback(() => {
     players.forEach((p) => {
-      const ref = refs.current.get(p.id) as HTMLDivElement;
+      const ref = refsPlayers.current.get(p.id) as HTMLDivElement;
       if (ref) {
         ref.style.top = `${p.y}px`;
         ref.style.left = `${p.x}px`;
       }
     });
   }, [players]);
+
+  const drawFoods = useCallback(() => {
+    foods.forEach((f) => {
+      const ref = refsFoods.current.get(f.id) as HTMLDivElement;
+      if (ref) {
+        ref.style.top = `${f.y}px`;
+        ref.style.left = `${f.x}px`;
+      }
+    });
+  }, [foods]);
 
   useEffect(() => {
     socket.on("new-player", (data) => {
@@ -58,11 +81,29 @@ const Agar = () => {
       if (meRef.current) {
         setPlayers([meRef.current]);
       }
+
+      socket.emit("screen-size", { width, height });
     });
     return () => {
       socket.off("register-ok");
     };
   }, []);
+
+  useEffect(() => {
+    socket.on("update-food", (newFoods) => {
+      setFoods((prev) => {
+        const foodMap = new Map(prev.map((food) => [food.id, food])); // map des anciens aliments
+        newFoods.foods.forEach((food: Food) => {
+          foodMap.set(food.id, food); // Ajoute ou met à jour les aliments
+        });
+        return Array.from(foodMap.values());
+      });
+    });
+
+    return () => {
+      socket.off("update-food");
+    };
+  }, [foods]);
 
   useEffect(() => {
     socket.on("ennemy-move", (data) => {
@@ -81,8 +122,12 @@ const Agar = () => {
   }, []);
 
   useEffect(() => {
-    draw();
-  }, [draw, players]);
+    drawPlayers();
+  }, [drawPlayers, players]);
+
+  useEffect(() => {
+    drawFoods();
+  }, [drawFoods, foods]);
 
   const drawGrid = () => {
     const canvas = canvasRef.current;
@@ -124,15 +169,6 @@ const Agar = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const updateCameraPosition = () => {
-    if (meRef.current) {
-      setCamera({
-        x: meRef.current.x - window.innerWidth / 2,
-        y: meRef.current.y - window.innerHeight / 2,
-      });
-    }
-  };
-
   useEffect(() => {
     const handlePlayerMove = (e: MouseEvent) => {
       if (meRef.current) {
@@ -147,7 +183,6 @@ const Agar = () => {
             return p;
           })
         );
-        updateCameraPosition();
       }
     };
 
@@ -171,15 +206,32 @@ const Agar = () => {
           return (
             <div
               className={clsx(
-                `transition-all duration-1000 absolute w-[30px] h-[30px] rounded-[15px]`
+                `transition-all duration-1000 absolute w-[30px] h-[30px] rounded-full`
               )}
               style={{
                 backgroundColor: p.color ?? "",
-                top: `${p.y - camera.y - 15}px`,
-                left: `${p.x - camera.x - 15}px`,
+                top: `${p.y}px`,
+                left: `${p.x}px`,
               }}
-              ref={(el) => setRef(p.id, el)}
+              ref={(el) => setRefPlayer(p.id, el)}
               key={p.id}
+            ></div>
+          );
+        })}
+      </div>
+
+      <div className="relative z-10">
+        {foods.map((f) => {
+          return (
+            <div
+              key={f.id}
+              className="transition-all duration-1000 absolute w-[30px] h-[30px] rounded-full"
+              ref={(el) => setRefFoods(f.id, el)}
+              style={{
+                backgroundColor: f.color ?? "",
+                top: `${f.y}px`,
+                left: `${f.x}px`,
+              }}
             ></div>
           );
         })}
